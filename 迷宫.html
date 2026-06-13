@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>冰封迷宫 - 3D生存游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        * { touch-action: none; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #C4B896; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1000;
+        }
+        
+        .glitch-text {
+            font-size: 3rem; font-weight: bold; color: #4A4035;
+            text-shadow: 2px 2px #8B7355, -2px -2px #D4C4A8;
+        }
+        
+        .instruction { margin: 8px 0; font-size: 1rem; color: #5B4B35; text-align: center; line-height: 1.4; }
+        .highlight-green { color: #1a6b1a; font-weight: bold; }
+        .highlight-red { color: #8B0000; font-weight: bold; }
+        .highlight-black { color: #FFF; background: #333; padding: 0 5px; font-weight: bold; }
+        
+        #start-btn {
+            margin-top: 30px; padding: 15px 40px;
+            background: transparent; border: 3px solid #4A4035;
+            color: #4A4035; font-size: 1.2rem; cursor: pointer;
+            transition: all 0.3s; text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+        #start-btn:hover { background: #4A4035; color: #C4B896; }
+        
+        #hud {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: none;
+        }
+        
+        #info-box {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(196, 184, 150, 0.9); border: 2px solid #4A4035;
+            padding: 10px; color: #3B3025; font-size: 12px;
+            border-radius: 5px; min-width: 180px; z-index: 100;
+        }
+        
+        .danger-flash { animation: flashRed 0.5s infinite; color: #8B0000 !important; font-weight: bold; }
+        @keyframes flashRed { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        #distance-hint {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(196, 184, 150, 0.9); border: 2px solid #4A4035;
+            padding: 10px; color: #3B3025; font-size: 14px;
+            border-radius: 5px; z-index: 100; text-align: center;
+        }
+        
+        #mobile-controls {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 50;
+        }
+        
+        .joystick-area {
+            position: absolute; bottom: 80px; left: 30px;
+            width: 100px; height: 100px;
+            background: rgba(74, 64, 53, 0.2); border: 2px solid rgba(74, 64, 53, 0.5);
+            border-radius: 50%; pointer-events: auto;
+        }
+        
+        .joystick-knob {
+            position: absolute; width: 40px; height: 40px;
+            background: rgba(74, 64, 53, 0.6); border-radius: 50%;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        
+        #skill-btn {
+            position: absolute; bottom: 80px; right: 30px;
+            width: 70px; height: 70px; border-radius: 50%;
+            background: rgba(70, 100, 130, 0.4); border: 3px solid #2F4F4F;
+            color: #fff; font-size: 12px; font-weight: bold;
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; pointer-events: auto; z-index: 100;
+        }
+        
+        #skill-btn.cooldown { background: rgba(100,100,100,0.3); border-color: #666; }
+        #skill-cd-text { font-size: 10px; margin-top: 2px; }
+        
+        .end-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(196, 184, 150, 0.95); display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 2000; pointer-events: auto;
+        }
+        
+        .end-title { font-size: 3rem; margin-bottom: 20px; font-weight: bold; }
+        .retry-btn { padding: 15px 40px; font-size: 1.2rem; cursor: pointer; background: transparent; border: 3px solid; transition: all 0.3s; }
+        
+        #game-over { color: #8B0000; }
+        #game-over .retry-btn { border-color: #8B0000; color: #8B0000; }
+        #game-over .retry-btn:hover { background: #8B0000; color: #C4B896; }
+        
+        #victory { color: #1a6b1a; }
+        #victory .retry-btn { border-color: #1a6b1a; color: #1a6b1a; }
+        #victory .retry-btn:hover { background: #1a6b1a; color: #C4B896; }
+        
+        #warning-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            box-shadow: inset 0 0 100px rgba(139, 0, 0, 0);
+            pointer-events: none; transition: box-shadow 0.3s; z-index: 99;
+        }
+        .warning-active { box-shadow: inset 0 0 150px rgba(139, 0, 0, 0.8) !important; }
+        
+        .freeze-effect {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(100, 149, 237, 0.3) 0%, transparent 70%);
+            pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 98;
+        }
+        .freeze-active { opacity: 1; }
+        
+        #desktop-hint {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            color: #4A4035; font-size: 12px; text-align: center;
+            background: rgba(196, 184, 150, 0.7); padding: 5px 10px; border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1 class="glitch-text">冰封迷宫</h1>
+        <div style="margin-top: 20px; padding: 0 20px;">
+            <p class="instruction">收集 <span class="highlight-green">20个水晶</span> 开启逃生门</p>
+            <p class="instruction">躲避 <span class="highlight-red">红色怪物</span>，被抓到就失败！</p>
+            <p class="instruction">使用 <span class="highlight-black">冰封技能</span> 冻住怪物20秒（CD30秒）</p>
+            <p class="instruction" style="color:#4A4035; font-size:0.9rem;">操作：左摇杆移动 | 左右滑动转向 | 蓝色按钮技能</p>
+        </div>
+        <button id="start-btn">开始生存</button>
+    </div>
+
+    <div id="hud">
+        <div id="info-box">
+            <div>水晶: <span id="crystal-count">0</span>/20</div>
+            <div>距离怪物: <span id="monster-dist">--</span>m</div>
+            <div>状态: <span id="monster-state">搜索中...</span></div>
+            <div>FPS: <span id="fps">60</span></div>
+        </div>
+        
+        <div id="distance-hint">
+            <div>最近水晶距离</div>
+            <div id="crystal-dist" style="font-size: 24px; font-weight: bold; color: #008B8B;">--m</div>
+        </div>
+        
+        <div id="mobile-controls">
+            <div id="move-joystick" class="joystick-area">
+                <div class="joystick-knob"></div>
+            </div>
+        </div>
+        
+        <div id="skill-btn">
+            <div>❄️</div>
+            <div style="font-size:12px;">冻结</div>
+            <div id="skill-cd-text">就绪</div>
+        </div>
+        
+        <div id="desktop-hint">左右滑动或拖动鼠标转向 | WASD移动</div>
+        
+        <div id="warning-overlay"></div>
+        <div id="freeze-overlay" class="freeze-effect"></div>
+    </div>
+
+    <div id="game-over" class="end-screen">
+        <div class="end-title">💀 你被抓住了</div>
+        <button class="retry-btn" onclick="location.reload()">重新挑战</button>
+    </div>
+
+    <div id="victory" class="end-screen">
+        <div class="end-title">🎉 逃出生天！</div>
+        <button class="retry-btn" onclick="location.reload()">再玩一次</button>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        const gameState = {
+            crystals: 0, totalCrystals: 20, isPlaying: false,
+            isFrozen: false, freezeEndTime: 0, lastSkillTime: 0,
+            skillCD: 30000, freezeDuration: 20000,
+            playerSpeed: 0.12, monsterSpeed: 0.06,
+            mazeSize: 15, cellSize: 4,
+            isMobile: false
+        };
+
+        let scene, camera, renderer;
+        let player, monster, crystals = [], maze = [], walls = [], exitDoor = null;
+        let playerLight, ambientLight, arrowHelper;
+        let frameCount = 0, fpsTime = 0;
+
+        const keys = {};
+        const moveJoystick = { x: 0, y: 0, active: false, center: {x:0,y:0} };
+        
+        let touchStart = { x: 0, y: 0 };
+        let isTouching = false;
+
+        let ambientSynth, chaseSynth, crystalSynth, skillSynth, deathSynth;
+        let isAudioInit = false;
+
+        // 创建波纹纹理
+        function createWaveTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // 背景色
+            ctx.fillStyle = '#C4B896';
+            ctx.fillRect(0, 0, 256, 256);
+            
+            // 绘制黑色波纹线
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 2;
+            
+            for (let i = 0; i < 256; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                for (let x = 0; x <= 256; x += 10) {
+                    const y = i + Math.sin(x * 0.05) * 10;
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            
+            // 添加一些垂直的细线增加纹理感
+            ctx.strokeStyle = '#2a2a2a';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 256; i += 40) {
+                ctx.beginPath();
